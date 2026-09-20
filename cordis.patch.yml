@@ -1,0 +1,18 @@
+- insert:
+    - id: notebook
+      name: dsh-notebook
+      config:
+        databasePath: !!js dshHomePath('notebook/notebook.sqlite3')
+        imageDirectory: !!js dshHomePath('notebook/images')
+        busyTimeoutMs: 5000
+        defaultPageSize: 30
+        maxPageSize: 100
+        maxBodyBytes: 1048576
+        maxImageBytes: 10485760
+        maxImagesPerNote: 50
+
+    - id: notebook-tools
+      name: dsh-notebook/tools
+
+    - id: notebook-skill
+      name: dsh-notebook/skill

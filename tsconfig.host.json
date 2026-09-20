@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "outDir": "lib/types",
+    "rootDir": "src",
+    "rewriteRelativeImportExtensions": true,
+    "types": ["node"],
+    "esModuleInterop": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "experimentalDecorators": false
+  },
+  "include": ["src/index.ts", "src/tools.ts", "src/skill.ts", "src/types.ts", "src/host/**/*.ts"]
+}
