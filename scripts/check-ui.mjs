@@ -8,12 +8,12 @@ const source = (await Promise.all(files.map(file => readFile(file, 'utf8')))).jo
 if (/<svg\b/u.test(source)) throw new Error('Use lucide-react instead of inline SVG')
 for (const tag of ['input', 'button']) {
   const matches = [...source.matchAll(new RegExp(`<${tag}\\b`, 'gu'))].length
-  const allowed = tag === 'input' ? 1 : 4
+  const allowed = tag === 'input' ? 1 : 2
   if (matches !== allowed) {
     throw new Error(`Expected exactly ${String(allowed)} justified native <${tag}> uses, found ${String(matches)}`)
   }
 }
-for (const primitive of ['Button', 'Input', 'Modal', 'MarkdownText', 'Tag', 'Pill']) {
+for (const primitive of ['Button', 'Input', 'Menu', 'Modal', 'MarkdownText', 'Tag', 'Pill']) {
   if (!source.includes(primitive)) throw new Error(`Required DSH primitive is missing: ${primitive}`)
 }
 const styles = await readFile(new URL('../src/client/styles.ts', import.meta.url), 'utf8')

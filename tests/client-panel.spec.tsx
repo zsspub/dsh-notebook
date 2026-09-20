@@ -22,6 +22,13 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   }) => <section><button type="button" onClick={onToggle}>{icon}{title}</button>{open && children}</section>,
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
   MarkdownText: ({ text }: { text: string }) => <article data-testid="markdown">{text}</article>,
+  Menu: ({ open, anchor, items, onSelect }: {
+    open: boolean
+    anchor: React.ReactNode
+    items: readonly ({ id: string; label?: React.ReactNode; type?: string })[]
+    onSelect: (id: string) => void
+  }) => <>{anchor}{open && <div role="menu">{items.filter(item => item.type === undefined).map(item =>
+    <button key={item.id} type="button" role="menuitem" onClick={() => onSelect(item.id)}>{item.label}</button>)}</div>}</>,
   Modal: ({ open, onClose, title, closeLabel, description, children, footer }: {
     open: boolean
     onClose: () => void
@@ -224,18 +231,36 @@ describe('NotebookPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Archive' }))
     await waitFor(() => expect(service.archive).toHaveBeenCalled())
 
-    await user.click(screen.getByRole('button', { name: /Archive 1/ }))
+    await user.click(screen.getByRole('button', { name: 'Note scope' }))
+    await user.click(screen.getByRole('menuitem', { name: /Archive 1/ }))
     await user.click(await screen.findByRole('button', { name: /Launch notes/ }))
     await user.click(screen.getByRole('button', { name: 'Restore' }))
     await waitFor(() => expect(service.restore).toHaveBeenCalled())
 
     await user.click(screen.getByRole('button', { name: 'Archive' }))
-    await user.click(screen.getByRole('button', { name: /Archive 1/ }))
+    await user.click(screen.getByRole('button', { name: 'Note scope' }))
+    await user.click(screen.getByRole('menuitem', { name: /Archive 1/ }))
     await user.click(await screen.findByRole('button', { name: /Launch notes/ }))
     await user.click(screen.getByRole('button', { name: 'Delete permanently' }))
     const dialog = await screen.findByRole('dialog', { name: 'Permanently delete note?' })
     await user.click(within(dialog).getByRole('button', { name: 'Delete permanently' }))
     await waitFor(() => expect(service.deleteNote).toHaveBeenCalled())
+  })
+
+  it('switches notebooks through one scope menu instead of a third navigation column', async () => {
+    const user = userEvent.setup()
+    const service = api()
+    renderPanel(service)
+    await screen.findByRole('button', { name: /Launch notes/ })
+
+    expect(document.querySelector('.dsh-notebook-nav')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Note scope' }))
+    await user.click(screen.getByRole('menuitem', { name: /Work 1/ }))
+
+    await waitFor(() => expect(service.search).toHaveBeenLastCalledWith(expect.objectContaining({
+      notebookId: 'book-1',
+      archived: false,
+    }), expect.any(AbortSignal)))
   })
 
   it('loads history and restores an earlier revision as a new revision', async () => {

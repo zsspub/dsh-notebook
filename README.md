@@ -30,7 +30,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-notebook
 
 ## Use
 
-The right-side panel provides notebook navigation, all and recently updated notes, an archive, tag filters, full-text search, Markdown editing and preview, image galleries, and revision restoration. It switches from a list-and-detail layout to a single-column back flow when the sidebar is narrow.
+The right-side panel uses a compact scope menu to switch between notebooks, all notes, recent updates, and the archive. The main surface stays focused on a list-and-detail layout with tag filters, full-text search, Markdown editing and preview, image galleries, and revision restoration. It switches to a single-column back flow when the sidebar is narrow.
 
 Archiving is the normal delete path and remains reversible. Permanent note deletion and notebook deletion require explicit panel confirmation. A notebook must contain no active or archived notes before it can be deleted. Restoring a revision creates a new revision instead of overwriting history.
 

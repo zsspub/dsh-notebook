@@ -7,6 +7,7 @@ export declare const en: {
     readonly recent: "Recently updated";
     readonly archived: "Archive";
     readonly notebooks: "Notebooks";
+    readonly scope: "Note scope";
     readonly tags: "Tags";
     readonly search: "Search notes";
     readonly newNote: "New note";
@@ -34,6 +35,7 @@ export declare const en: {
     readonly current: "Current";
     readonly empty: "No notes yet";
     readonly emptyHint: "Create a note here, or ask the Agent to remember something.";
+    readonly selectNote: "Select a note to read or edit.";
     readonly noMatch: "No matching notes";
     readonly loading: "Loading notebook…";
     readonly saving: "Saving…";

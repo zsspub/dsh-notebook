@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
-  Archive, ArrowLeft, Clock3, FileText, History, Image, NotebookTabs, Plus, RotateCcw,
-  Search, Tag as TagIcon, Trash2, Upload,
+  Archive, ArrowLeft, ChevronDown, Clock3, FileText, History, Image, NotebookTabs, Pencil,
+  Plus, RotateCcw, Search, Tag as TagIcon, Trash2, Upload,
 } from 'lucide-react'
 import {
-  Button, DisclosureRow, Input, MarkdownText, Modal, Pill, Tag, Toast,
+  Button, DisclosureRow, Input, MarkdownText, Menu, Modal, Pill, Tag, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   ImageUploadInput, Note, NoteImageId, NoteRevision, NoteSearchResult, NotebookId, NotebookOverview,
@@ -122,6 +123,7 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   const [confirmation, setConfirmation] = useState<Confirmation>()
   const [notebookForm, setNotebookForm] = useState<{ id?: NotebookId; revision?: number; name: string }>()
   const [toast, setToast] = useState<{ id: number; text: string }>()
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const imageUrls = useRef(new Map<NoteImageId, string>())
   const selectedId = useRef<Note['id']>()
   selectedId.current = selected?.id
@@ -284,6 +286,32 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   }
 
   const activeNotebook = overview?.notebooks.find(item => item.id === notebookId)
+  const scopeId = notebookId ? `notebook:${notebookId}` : `view:${view}`
+  const scopeLabel = activeNotebook?.name ?? (view === 'recent' ? t('recent') : view === 'archived' ? t('archived') : t('allNotes'))
+  const scopeItems = useMemo<readonly MenuEntry[]>(() => [
+    {
+      id: 'view:all',
+      label: <span className="dsh-notebook-menu-label"><span>{t('allNotes')}</span><span>{overview?.activeNotes ?? 0}</span></span>,
+      icon: <FileText size={14} />,
+    },
+    {
+      id: 'view:recent',
+      label: t('recent'),
+      icon: <Clock3 size={14} />,
+    },
+    {
+      id: 'view:archived',
+      label: <span className="dsh-notebook-menu-label"><span>{t('archived')}</span><span>{overview?.archivedNotes ?? 0}</span></span>,
+      icon: <Archive size={14} />,
+    },
+    { type: 'separator', id: 'scope-separator' },
+    { type: 'label', id: 'notebook-label', text: t('notebooks') },
+    ...(overview?.notebooks.map(notebook => ({
+      id: `notebook:${notebook.id}`,
+      label: <span className="dsh-notebook-menu-label"><span>{notebook.name}</span><span>{notebook.noteCount}</span></span>,
+      icon: <NotebookTabs size={14} />,
+    })) ?? []),
+  ], [overview, t])
   const markdownLabels = useMemo(() => ({
     code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') },
     footnotes: t('markdownFootnotes'),
@@ -291,68 +319,64 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
 
   return <>
     <style>{styles}</style>
-    <main className="dsh-notebook" data-detail={selected !== undefined || draft !== undefined}>
-      <nav className="dsh-notebook-nav" aria-label={t('notebooks')}>
-        <div className="dsh-notebook-section">
-          <div className="dsh-notebook-heading"><h2>{t('title')}</h2>
-            <Button size="sm" variant="ghost" icon={<Plus size={14} />} aria-label={t('newNotebook')}
-              onClick={() => setNotebookForm({ name: '' })} />
-          </div>
-          <div className="dsh-notebook-nav-list">
-            {([
-              ['all', t('allNotes'), <FileText size={14} key="all" />, overview?.activeNotes ?? 0],
-              ['recent', t('recent'), <Clock3 size={14} key="recent" />, undefined],
-              ['archived', t('archived'), <Archive size={14} key="archived" />, overview?.archivedNotes ?? 0],
-            ] as const).map(([id, label, icon, count]) => (
-              <button key={id} type="button" className="dsh-notebook-nav-item"
-                aria-pressed={view === id && notebookId === ''} onClick={() => { setView(id); setNotebookId('') }}>
-                <span className="dsh-notebook-row">{icon}{label}</span>{count !== undefined && <Tag tone="quiet">{count}</Tag>}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="dsh-notebook-section">
-          <div className="dsh-notebook-heading"><h3>{t('notebooks')}</h3></div>
-          <div className="dsh-notebook-nav-list">
-            {overview?.notebooks.map(notebook => (
-              <button key={notebook.id} type="button" className="dsh-notebook-nav-item"
-                aria-pressed={notebookId === notebook.id}
-                onClick={() => { setNotebookId(notebook.id); setView('all') }}>
-                <span>{notebook.name}</span><Tag tone="quiet">{notebook.noteCount}</Tag>
-              </button>
-            ))}
-          </div>
-          {activeNotebook && <div className="dsh-notebook-actions">
-            <Button size="sm" variant="ghost" onClick={() => setNotebookForm({
-              id: activeNotebook.id, revision: activeNotebook.revision, name: activeNotebook.name,
-            })}>{t('rename')}</Button>
-            <Button size="sm" variant="ghost" icon={<Trash2 size={13} />}
-              disabled={activeNotebook.noteCount + activeNotebook.archivedNoteCount > 0}
-              onClick={() => setConfirmation({ kind: 'notebook', id: activeNotebook.id, revision: activeNotebook.revision })}>
-              {t('delete')}
-            </Button>
-          </div>}
-        </div>
-        {(overview?.tags.length ?? 0) > 0 && <div className="dsh-notebook-section">
-          <div className="dsh-notebook-heading"><h3>{t('tags')}</h3></div>
-          <div className="dsh-notebook-pills">
-            {overview?.tags.map(value => <Pill key={value} active={tag === value}
-              onClick={() => setTag(current => current === value ? '' : value)}>{value}</Pill>)}
-          </div>
-        </div>}
-      </nav>
-
+    <main className="dsh-notebook" data-detail={selected !== undefined || draft !== undefined}
+      data-empty={result.notes.length === 0 && selected === undefined && draft === undefined}>
       <section className="dsh-notebook-list-pane">
         <header className="dsh-notebook-list-head">
-          <div className="dsh-notebook-row"><Search size={14} aria-hidden="true" />
-            <Input value={query} onChange={event => setQuery(event.currentTarget.value)}
-              placeholder={t('search')} aria-label={t('search')} />
+          <div className="dsh-notebook-scope">
+            <Menu
+              open={scopeMenuOpen}
+              onClose={() => setScopeMenuOpen(false)}
+              items={scopeItems}
+              selectedId={scopeId}
+              onSelect={(id) => {
+                if (id.startsWith('notebook:')) {
+                  setNotebookId(id.slice('notebook:'.length))
+                  setView('all')
+                } else {
+                  setNotebookId('')
+                  setView(id.slice('view:'.length) as View)
+                }
+                setSelected(undefined)
+                setDraft(undefined)
+                setScopeMenuOpen(false)
+              }}
+              portal
+              dense
+              anchor={<Button className="dsh-notebook-scope-select" size="sm" variant="outline"
+                icon={activeNotebook ? <NotebookTabs size={14} /> : view === 'archived' ? <Archive size={14} />
+                  : view === 'recent' ? <Clock3 size={14} /> : <FileText size={14} />}
+                aria-label={t('scope')} aria-haspopup="menu" aria-expanded={scopeMenuOpen}
+                onClick={() => setScopeMenuOpen(open => !open)}>
+                <span className="dsh-notebook-scope-label">{scopeLabel}</span><ChevronDown size={13} />
+              </Button>}
+            />
+            <div className="dsh-notebook-actions">
+              <Button size="sm" variant="ghost" icon={<Plus size={14} />} aria-label={t('newNotebook')}
+                title={t('newNotebook')} onClick={() => setNotebookForm({ name: '' })} />
+              {activeNotebook && <>
+                <Button size="sm" variant="ghost" icon={<Pencil size={13} />} aria-label={t('rename')}
+                  title={t('rename')} onClick={() => setNotebookForm({
+                    id: activeNotebook.id, revision: activeNotebook.revision, name: activeNotebook.name,
+                  })} />
+                <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} aria-label={t('delete')}
+                  title={t('delete')} disabled={activeNotebook.noteCount + activeNotebook.archivedNoteCount > 0}
+                  onClick={() => setConfirmation({ kind: 'notebook', id: activeNotebook.id, revision: activeNotebook.revision })} />
+              </>}
+            </div>
           </div>
-          <div className="dsh-notebook-toolbar">
+          <div className="dsh-notebook-search-row">
+            <div className="dsh-notebook-row"><Search size={14} aria-hidden="true" />
+              <Input value={query} onChange={event => setQuery(event.currentTarget.value)}
+                placeholder={t('search')} aria-label={t('search')} />
+            </div>
             <Button size="sm" variant="primary" icon={<Plus size={14} />}
               onClick={() => setDraft(emptyDraft(notebookId || overview?.notebooks[0]?.id))}>{t('newNote')}</Button>
-            {tag && <Tag tone="info"><TagIcon size={11} /> {tag}</Tag>}
           </div>
+          {(overview?.tags.length ?? 0) > 0 && <div className="dsh-notebook-pills">
+            {overview?.tags.map(value => <Pill key={value} active={tag === value}
+              onClick={() => setTag(current => current === value ? '' : value)}><TagIcon size={11} /> {value}</Pill>)}
+          </div>}
         </header>
         {error && <div className="dsh-notebook-error" role="alert">{t('error')}: {error}</div>}
         {loading && result.notes.length === 0
@@ -488,7 +512,9 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
                   </DisclosureRow>
                 </div>
               </>
-            : <div className="dsh-notebook-empty"><FileText size={36} /><h3>{t('empty')}</h3><p>{t('emptyHint')}</p></div>}
+            : result.notes.length > 0
+              ? <div className="dsh-notebook-empty dsh-notebook-select-hint"><FileText size={30} /><p>{t('selectNote')}</p></div>
+              : null}
       </section>
     </main>
 
