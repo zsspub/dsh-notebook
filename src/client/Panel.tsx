@@ -320,8 +320,9 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   return <>
     <style>{styles}</style>
     <main className="dsh-notebook" data-detail={selected !== undefined || draft !== undefined}
+      data-draft={draft !== undefined}
       data-empty={result.notes.length === 0 && selected === undefined && draft === undefined}>
-      <section className="dsh-notebook-list-pane">
+      <section className="dsh-notebook-list-pane" hidden={draft !== undefined}>
         <header className="dsh-notebook-list-head">
           <div className="dsh-notebook-scope">
             <Menu
@@ -371,7 +372,10 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
                 placeholder={t('search')} aria-label={t('search')} />
             </div>
             <Button size="sm" variant="primary" icon={<Plus size={14} />}
-              onClick={() => setDraft(emptyDraft(notebookId || overview?.notebooks[0]?.id))}>{t('newNote')}</Button>
+              onClick={() => {
+                setPreview(false)
+                setDraft(emptyDraft(notebookId || overview?.notebooks[0]?.id))
+              }}>{t('newNote')}</Button>
           </div>
           {(overview?.tags.length ?? 0) > 0 && <div className="dsh-notebook-pills">
             {overview?.tags.map(value => <Pill key={value} active={tag === value}
@@ -401,8 +405,11 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
         {draft
           ? <form onSubmit={saveDraft} className="dsh-notebook-detail">
               <header className="dsh-notebook-detail-head">
-                <div><Button className="dsh-notebook-back" size="sm" variant="ghost" icon={<ArrowLeft size={14} />}
-                  onClick={() => setDraft(undefined)}>{t('back')}</Button><h2>{draft.id ? t('edit') : t('newNote')}</h2></div>
+                <div><Button type="button" className="dsh-notebook-back" size="sm" variant="ghost" icon={<ArrowLeft size={14} />}
+                  onClick={() => {
+                    setDraft(undefined)
+                    setPreview(false)
+                  }}>{t('back')}</Button><h2>{draft.id ? t('edit') : t('newNote')}</h2></div>
                 <div className="dsh-notebook-actions">
                   <Pill active={!preview} onClick={() => setPreview(false)}>{t('edit')}</Pill>
                   <Pill active={preview} onClick={() => setPreview(true)}>{t('preview')}</Pill>
@@ -469,7 +476,10 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
                     </div>
                   </div>
                   <div className="dsh-notebook-actions">
-                    <Button size="sm" variant="outline" onClick={() => setDraft(noteDraft(selected))}>{t('edit')}</Button>
+                    <Button size="sm" variant="outline" onClick={() => {
+                      setPreview(false)
+                      setDraft(noteDraft(selected))
+                    }}>{t('edit')}</Button>
                     {selected.archivedAt === null
                       ? <Button size="sm" variant="ghost" icon={<Archive size={14} />} onClick={() => void run(async signal => {
                           const note = await api.archive({ id: selected.id, expectedRevision: selected.revision }, signal)

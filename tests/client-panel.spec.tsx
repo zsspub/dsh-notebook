@@ -193,6 +193,28 @@ afterEach(() => {
 })
 
 describe('NotebookPanel', () => {
+  it('replaces the note list while drafting and restores it when returning', async () => {
+    const user = userEvent.setup()
+    const service = api()
+    renderPanel(service)
+    await screen.findByRole('button', { name: /Launch notes/ })
+
+    const panel = document.querySelector('.dsh-notebook') as HTMLElement
+    const list = document.querySelector('.dsh-notebook-list-pane') as HTMLElement
+    await user.click(screen.getByRole('button', { name: 'New note' }))
+
+    expect(panel.dataset.draft).toBe('true')
+    expect(list.hidden).toBe(true)
+    expect(screen.getByRole('heading', { name: 'New note' })).toBeDefined()
+    await user.type(screen.getByLabelText('Note title'), 'Unsaved note')
+    await user.click(screen.getByRole('button', { name: 'Back to notes' }))
+
+    expect(panel.dataset.draft).toBe('false')
+    expect(list.hidden).toBe(false)
+    expect(screen.queryByRole('heading', { name: 'New note' })).toBeNull()
+    expect(service.create).not.toHaveBeenCalled()
+  })
+
   it('creates and previews Markdown with tags and an uploaded image', async () => {
     const user = userEvent.setup()
     const service = api()

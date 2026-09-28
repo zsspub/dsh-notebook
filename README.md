@@ -30,7 +30,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-notebook
 
 ## Use
 
-The right-side panel uses a compact scope menu to switch between notebooks, all notes, recent updates, and the archive. The main surface stays focused on a list-and-detail layout with tag filters, full-text search, Markdown editing and preview, image galleries, and revision restoration. It switches to a single-column back flow when the sidebar is narrow.
+The right-side panel uses a compact scope menu to switch between notebooks, all notes, recent updates, and the archive. It provides a list-and-detail layout with tag filters, full-text search, Markdown editing and preview, image galleries, and revision restoration. Creating or editing a note fills the panel, with a back button at the top that returns to the previous list or note detail. Reading a note also uses a single-column back flow when the sidebar is narrow.
 
 Archiving is the normal delete path and remains reversible. Permanent note deletion and notebook deletion require explicit panel confirmation. A notebook must contain no active or archived notes before it can be deleted. Restoring a revision creates a new revision instead of overwriting history.
 
@@ -54,6 +54,8 @@ The bundled `dsh-notebook` Skill instructs the Agent to:
 | `notebook_note_restore` | Restore an archived note. |
 
 Permanent deletion, revision restoration, and notebook deletion are panel-only operations. Agent image parameters are 1-based positions in the current human message; callers do not provide attachment IDs.
+
+If a failed turn leaves one `dsh-notebook` Skill or notebook tool call with no result and no visible assistant text, the plugin records a model-surface replacement before the next request. The original events remain in the session log; an unanswered write is treated as having an unknown outcome, so the Agent should inspect notebook state before retrying it.
 
 ## Storage
 

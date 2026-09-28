@@ -3,12 +3,14 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
 import {
   BUNDLED_SKILL_RANK,
   type SkillCandidate,
   type SkillDefinition,
   type SkillProvider,
 } from '@deepseek-ai/dsh-skill'
+import { repairInterruptedNotebookCall } from './recovery.ts'
 
 const PROVIDER = 'dsh-notebook'
 const SKILL = 'dsh-notebook'
@@ -41,9 +43,13 @@ const provider: SkillProvider = {
 }
 
 export const name = 'notebook-skill'
-export const inject = ['skills']
+export const inject = ['skills', 'sessionQuery']
 
 /** Register the bundled notebook workflow. */
 export function apply(ctx: Context): void {
   ctx.skills.registerProvider(() => provider)
+  ctx.on('agent/request', async ({ agent, signal }, next) => {
+    await repairInterruptedNotebookCall(ctx, agent.session, signal)
+    return next()
+  })
 }
