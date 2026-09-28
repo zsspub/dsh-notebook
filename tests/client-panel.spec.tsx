@@ -199,20 +199,51 @@ describe('NotebookPanel', () => {
     renderPanel(service)
     await screen.findByRole('button', { name: /Launch notes/ })
 
-    const panel = document.querySelector('.dsh-notebook') as HTMLElement
     const list = document.querySelector('.dsh-notebook-list-pane') as HTMLElement
+    const detail = document.querySelector('.dsh-notebook > .dsh-notebook-detail') as HTMLElement
     await user.click(screen.getByRole('button', { name: 'New note' }))
 
-    expect(panel.dataset.draft).toBe('true')
     expect(list.hidden).toBe(true)
+    expect(detail.hidden).toBe(false)
     expect(screen.getByRole('heading', { name: 'New note' })).toBeDefined()
     await user.type(screen.getByLabelText('Note title'), 'Unsaved note')
     await user.click(screen.getByRole('button', { name: 'Back to notes' }))
 
-    expect(panel.dataset.draft).toBe('false')
     expect(list.hidden).toBe(false)
+    expect(detail.hidden).toBe(true)
     expect(screen.queryByRole('heading', { name: 'New note' })).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'New note' }))
     expect(service.create).not.toHaveBeenCalled()
+  })
+
+  it('opens the note in place and returns through edit to the list', async () => {
+    const user = userEvent.setup()
+    renderPanel(api())
+    const listButton = await screen.findByRole('button', { name: /Launch notes/ })
+    const list = document.querySelector('.dsh-notebook-list-pane') as HTMLElement
+    const detail = document.querySelector('.dsh-notebook > .dsh-notebook-detail') as HTMLElement
+
+    expect(list.hidden).toBe(false)
+    expect(detail.hidden).toBe(true)
+    await user.click(listButton)
+    expect(await screen.findByRole('heading', { name: 'Launch notes' })).toBeDefined()
+    expect(list.hidden).toBe(true)
+    expect(detail.hidden).toBe(false)
+    expect(screen.queryByRole('button', { name: /Launch notes/ })).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Back to notes' }))
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByRole('heading', { name: 'Edit' })).toBeDefined()
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Back to note' }))
+    await user.click(screen.getByRole('button', { name: 'Back to note' }))
+    expect(screen.getByRole('heading', { name: 'Launch notes' })).toBeDefined()
+    expect(list.hidden).toBe(true)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Back to notes' }))
+
+    await user.click(screen.getByRole('button', { name: 'Back to notes' }))
+    expect(list.hidden).toBe(false)
+    expect(detail.hidden).toBe(true)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /Launch notes/ }))
   })
 
   it('creates and previews Markdown with tags and an uploaded image', async () => {
@@ -253,6 +284,7 @@ describe('NotebookPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Archive' }))
     await waitFor(() => expect(service.archive).toHaveBeenCalled())
 
+    await user.click(screen.getByRole('button', { name: 'Back to notes' }))
     await user.click(screen.getByRole('button', { name: 'Note scope' }))
     await user.click(screen.getByRole('menuitem', { name: /Archive 1/ }))
     await user.click(await screen.findByRole('button', { name: /Launch notes/ }))
@@ -260,6 +292,7 @@ describe('NotebookPanel', () => {
     await waitFor(() => expect(service.restore).toHaveBeenCalled())
 
     await user.click(screen.getByRole('button', { name: 'Archive' }))
+    await user.click(screen.getByRole('button', { name: 'Back to notes' }))
     await user.click(screen.getByRole('button', { name: 'Note scope' }))
     await user.click(screen.getByRole('menuitem', { name: /Archive 1/ }))
     await user.click(await screen.findByRole('button', { name: /Launch notes/ }))

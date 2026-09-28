@@ -35,7 +35,6 @@ export declare const en: {
     readonly current: "Current";
     readonly empty: "No notes yet";
     readonly emptyHint: "Create a note here, or ask the Agent to remember something.";
-    readonly selectNote: "Select a note to read or edit.";
     readonly noMatch: "No matching notes";
     readonly loading: "Loading notebook…";
     readonly saving: "Saving…";
@@ -52,6 +51,7 @@ export declare const en: {
     readonly restoreDescription: "The selected snapshot becomes a new revision. Current content remains in history.";
     readonly archiveHint: "Archived notes can be restored later.";
     readonly back: "Back to notes";
+    readonly backToNote: "Back to note";
     readonly latestRevision: "Latest revision";
     readonly uploadTooLarge: "Each image must not exceed 10 MiB.";
     readonly uploadType: "Only PNG, JPEG, WebP and GIF images are supported.";

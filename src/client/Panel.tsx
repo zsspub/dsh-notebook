@@ -126,6 +126,11 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const imageUrls = useRef(new Map<NoteImageId, string>())
   const selectedId = useRef<Note['id']>()
+  const listPane = useRef<HTMLElement>(null)
+  const detailPane = useRef<HTMLElement>(null)
+  const lastListAction = useRef<Note['id'] | 'new'>('new')
+  const page = draft !== undefined ? 'draft' : selected !== undefined ? 'detail' : 'list'
+  const previousPage = useRef(page)
   selectedId.current = selected?.id
 
   const run = useCallback(async <Value,>(operation: (signal: AbortSignal) => Promise<Value>): Promise<Value | undefined> => {
@@ -178,6 +183,20 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   }, [refresh, run, tab.visible])
 
   useEffect(() => {
+    if (previousPage.current === page) return
+    previousPage.current = page
+    if (page === 'list') {
+      const previousNote = lastListAction.current === 'new' ? undefined
+        : Array.from(listPane.current?.querySelectorAll<HTMLButtonElement>('.dsh-notebook-list-item') ?? [])
+          .find(button => button.dataset.noteId === lastListAction.current)
+      const target = previousNote ?? listPane.current?.querySelector<HTMLButtonElement>('.dsh-notebook-new-note')
+      target?.focus()
+    } else {
+      detailPane.current?.querySelector<HTMLButtonElement>('.dsh-notebook-back')?.focus()
+    }
+  }, [page])
+
+  useEffect(() => {
     if (!selected) return
     for (const image of selected.images) {
       if (imageUrls.current.has(image.id)) continue
@@ -193,6 +212,7 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   }, [api, selected, t])
 
   const selectNote = (id: Note['id']): void => {
+    lastListAction.current = id
     void run(async signal => {
       const note = await api.read({ id }, signal)
       setSelected(note)
@@ -316,13 +336,12 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
     code: { copyLabel: t('markdownCopy'), copiedLabel: t('markdownCopied') },
     footnotes: t('markdownFootnotes'),
   }), [t])
+  const showingDetail = page !== 'list'
 
   return <>
     <style>{styles}</style>
-    <main className="dsh-notebook" data-detail={selected !== undefined || draft !== undefined}
-      data-draft={draft !== undefined}
-      data-empty={result.notes.length === 0 && selected === undefined && draft === undefined}>
-      <section className="dsh-notebook-list-pane" hidden={draft !== undefined}>
+    <main className="dsh-notebook">
+      <section ref={listPane} className="dsh-notebook-list-pane" hidden={showingDetail}>
         <header className="dsh-notebook-list-head">
           <div className="dsh-notebook-scope">
             <Menu
@@ -371,8 +390,9 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
               <Input value={query} onChange={event => setQuery(event.currentTarget.value)}
                 placeholder={t('search')} aria-label={t('search')} />
             </div>
-            <Button size="sm" variant="primary" icon={<Plus size={14} />}
+            <Button className="dsh-notebook-new-note" size="sm" variant="primary" icon={<Plus size={14} />}
               onClick={() => {
+                lastListAction.current = 'new'
                 setPreview(false)
                 setDraft(emptyDraft(notebookId || overview?.notebooks[0]?.id))
               }}>{t('newNote')}</Button>
@@ -389,7 +409,7 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
             ? <div className="dsh-notebook-empty"><NotebookTabs size={36} /><h3>{query || tag ? t('noMatch') : t('empty')}</h3><p>{t('emptyHint')}</p></div>
             : <div className="dsh-notebook-list">
                 {result.notes.map(note => <button key={note.id} type="button" className="dsh-notebook-list-item"
-                  aria-pressed={selected?.id === note.id} onClick={() => selectNote(note.id)}>
+                  data-note-id={note.id} aria-pressed={selected?.id === note.id} onClick={() => selectNote(note.id)}>
                   <h3>{note.title}</h3>
                   <p>{note.excerpt}</p>
                   <span className="dsh-notebook-meta">
@@ -401,7 +421,8 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
               </div>}
       </section>
 
-      <section className="dsh-notebook-detail">
+      <section ref={detailPane} className="dsh-notebook-detail" hidden={!showingDetail}>
+        {error && <div className="dsh-notebook-error" role="alert">{t('error')}: {error}</div>}
         {draft
           ? <form onSubmit={saveDraft} className="dsh-notebook-detail">
               <header className="dsh-notebook-detail-head">
@@ -409,7 +430,7 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
                   onClick={() => {
                     setDraft(undefined)
                     setPreview(false)
-                  }}>{t('back')}</Button><h2>{draft.id ? t('edit') : t('newNote')}</h2></div>
+                  }}>{draft.id ? t('backToNote') : t('back')}</Button><h2>{draft.id ? t('edit') : t('newNote')}</h2></div>
                 <div className="dsh-notebook-actions">
                   <Pill active={!preview} onClick={() => setPreview(false)}>{t('edit')}</Pill>
                   <Pill active={preview} onClick={() => setPreview(true)}>{t('preview')}</Pill>
@@ -522,9 +543,7 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
                   </DisclosureRow>
                 </div>
               </>
-            : result.notes.length > 0
-              ? <div className="dsh-notebook-empty dsh-notebook-select-hint"><FileText size={30} /><p>{t('selectNote')}</p></div>
-              : null}
+            : null}
       </section>
     </main>
 
