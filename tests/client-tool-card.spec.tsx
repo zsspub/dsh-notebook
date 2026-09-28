@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { NotebookToolCard } from '../src/client/ToolCard.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -15,6 +15,8 @@ const translate = (key: keyof typeof en, values?: Record<string, string | number
   return value
 }
 const t = translate as PropsLocale<'notebook'>['t']
+
+afterEach(cleanup)
 
 describe('NotebookToolCard', () => {
   it('shows the target note, notebook, revision and image count', () => {
@@ -62,5 +64,26 @@ describe('NotebookToolCard', () => {
     render(<NotebookToolCard {...props} />)
     expect(screen.getByText('Notebook search')).toBeTruthy()
     expect(screen.getByText('12 notes')).toBeTruthy()
+  })
+
+  it('shows an error instead of success metadata when a tool call fails', () => {
+    const props = {
+      toolName: 'notebook_note_update',
+      callId: 'call',
+      cwd: '/tmp',
+      openFile: () => undefined,
+      loadImage: async () => ({ kind: 'missing' } as never),
+      t,
+      block: {
+        kind: 'settled',
+        call: { argsRaw: '{}' },
+        content: [{ type: 'text', text: JSON.stringify({ note: { title: 'Stale title', notebookName: 'Work', revision: 4 } }) }],
+        isError: true,
+      },
+    } as unknown as ComponentProps<typeof NotebookToolCard>
+    render(<NotebookToolCard {...props} />)
+    expect(screen.getByText('Operation failed')).toBeTruthy()
+    expect(screen.queryByText('Stale title · Work')).toBeNull()
+    expect(screen.queryByText('r4')).toBeNull()
   })
 })
