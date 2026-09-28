@@ -64,6 +64,7 @@ describe('failed notebook call recovery', () => {
     expect(session.snapshotEvents()[assistant.seq]).toEqual(assistant)
     expect(session.snapshotEvents().at(-1)).toMatchObject({
       type: 'user/message',
+      data: { source: { kind: 'notebook-recovery', form: 'notice', summary: 'Previous notebook call had no result' } },
       surfaceOp: { op: 'replace', startSeq: assistant.seq, endSeq: assistant.seq },
       sourceEventSeqs: [assistant.seq, assistant.seq + 1, assistant.seq + 3],
     })

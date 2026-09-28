@@ -5,6 +5,12 @@ import { createUserMessage, type Message, type ToolCallBlock } from '@deepseek-a
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-query'
 
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'notebook-recovery': { readonly kind: 'notebook-recovery'; readonly form: 'notice'; readonly summary: string }
+  }
+}
+
 const NOTEBOOK_TOOLS = new Set([
   'notebook_search',
   'notebook_read',
@@ -66,7 +72,7 @@ export async function repairInterruptedNotebookCall(ctx: Context, session: Sessi
 
     signal.throwIfAborted()
     const message = createUserMessage({
-      source: { kind: 'plugin', plugin: 'dsh-notebook', form: 'notice', summary: 'Previous notebook call had no result' },
+      source: { kind: 'notebook-recovery', form: 'notice', summary: 'Previous notebook call had no result' },
       content: [{ type: 'text', text: call.name === 'skill'
         ? 'The previous dsh-notebook skill call ended without a result. Invoke it again if this request still needs notebook access.'
         : 'The previous notebook tool call ended without a result. Its effect is unknown; search and read the notebook before retrying a write.' }],

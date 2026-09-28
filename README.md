@@ -6,7 +6,7 @@ Persistent notebooks for DeepSeek Harness. Manage Markdown notes, tags, images, 
 
 ## Requirements
 
-- DeepSeek Harness `0.1.6-alpha.2`
+- DeepSeek Harness `0.1.7-rc.2`
 - Node.js `^22.19.0 || >=24.0.0`
 - A Web profile with the right-sidebar UI
 
