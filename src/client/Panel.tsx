@@ -12,7 +12,7 @@ import {
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
-  ImageUploadInput, Note, NoteImageId, NoteRevision, NoteSearchResult, NotebookId, NotebookOverview,
+  ImageUploadInput, Note, NoteImageId, NoteRevision, NoteSearchInput, NoteSearchResult, NotebookId, NotebookOverview,
 } from '../types.ts'
 import type { NotebookApi } from './index.ts'
 import { NS, type NotebookLocaleKey } from './locales.ts'
@@ -72,6 +72,17 @@ function noteDraft(note: Note): Draft {
   }
 }
 
+function previewExcerpt(excerpt: string, title: string): string {
+  const plain = excerpt
+    .replace(/!?\[([^\]]+)\]\([^)]+\)/gu, '$1')
+    .replace(/(^|\s)#{1,6}\s+/gu, '$1')
+    .replace(/[*_`~]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  const heading = title.trim()
+  return plain === heading || plain.startsWith(`${heading} `) ? plain.slice(heading.length).trim() : plain
+}
+
 async function encodedImages(files: FileList, t: Translate): Promise<ImageUploadInput[]> {
   const results: ImageUploadInput[] = []
   for (const file of Array.from(files)) {
@@ -114,7 +125,9 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   const [notebookId, setNotebookId] = useState('')
   const [tag, setTag] = useState('')
   const [query, setQuery] = useState('')
+  const [settledQuery, setSettledQuery] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string>()
   const [draft, setDraft] = useState<Draft>()
   const [preview, setPreview] = useState(false)
@@ -126,6 +139,8 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   const [scopeMenuOpen, setScopeMenuOpen] = useState(false)
   const imageUrls = useRef(new Map<NoteImageId, string>())
   const selectedId = useRef<Note['id']>()
+  const refreshVersion = useRef(0)
+  const pendingRuns = useRef(0)
   const listPane = useRef<HTMLElement>(null)
   const detailPane = useRef<HTMLElement>(null)
   const lastListAction = useRef<Note['id'] | 'new'>('new')
@@ -133,7 +148,16 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
   const previousPage = useRef(page)
   selectedId.current = selected?.id
 
+  const searchInput = useMemo<NoteSearchInput>(() => ({
+    query: settledQuery || undefined,
+    notebookId: notebookId ? notebookId as NotebookId : undefined,
+    tags: tag ? [tag] : undefined,
+    archived: view === 'archived',
+    limit: view === 'recent' ? 15 : 100,
+  }), [notebookId, settledQuery, tag, view])
+
   const run = useCallback(async <Value,>(operation: (signal: AbortSignal) => Promise<Value>): Promise<Value | undefined> => {
+    pendingRuns.current += 1
     setLoading(true)
     setError(undefined)
     try {
@@ -142,22 +166,19 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
       if (!lifetime.current.signal.aborted) setError(errorText(failure, t))
       return undefined
     } finally {
-      if (!lifetime.current.signal.aborted) setLoading(false)
+      pendingRuns.current -= 1
+      if (!lifetime.current.signal.aborted) setLoading(pendingRuns.current > 0)
     }
   }, [t])
 
   const refresh = useCallback(async (keepSelected = true): Promise<void> => {
+    const version = ++refreshVersion.current
+    setLoadingMore(false)
     const [nextOverview, nextResult] = await Promise.all([
       api.overview({}, lifetime.current.signal),
-      api.search({
-        query: query.trim() || undefined,
-        notebookId: notebookId ? notebookId as NotebookId : undefined,
-        tags: tag ? [tag] : undefined,
-        archived: view === 'archived',
-        limit: view === 'recent' ? 15 : 100,
-      }, lifetime.current.signal),
+      api.search(searchInput, lifetime.current.signal),
     ])
-    if (lifetime.current.signal.aborted) return
+    if (lifetime.current.signal.aborted || version !== refreshVersion.current) return
     setOverview(nextOverview)
     setResult(nextResult)
     if (keepSelected && selectedId.current) {
@@ -165,12 +186,17 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
       const stillVisible = nextResult.notes.some(note => note.id === currentId)
       if (stillVisible) {
         const current = await api.read({ id: currentId }, lifetime.current.signal)
-        if (!lifetime.current.signal.aborted) setSelected(current)
+        if (!lifetime.current.signal.aborted && version === refreshVersion.current) setSelected(current)
       } else {
         setSelected(undefined)
       }
     }
-  }, [api, notebookId, query, tag, view])
+  }, [api, searchInput])
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setSettledQuery(query.trim()), 250)
+    return () => clearTimeout(timeout)
+  }, [query])
 
   useEffect(() => () => {
     lifetime.current.abort()
@@ -220,6 +246,12 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
       setPreview(false)
       setHistoryOpen(false)
     })
+  }
+
+  const startNewNote = (): void => {
+    lastListAction.current = 'new'
+    setPreview(false)
+    setDraft(emptyDraft(notebookId || overview?.notebooks[0]?.id))
   }
 
   const saveDraft = (event: FormEvent): void => {
@@ -305,7 +337,34 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
     })
   }
 
+  const loadMore = (): void => {
+    if (loadingMore || !result.hasMore) return
+    const version = refreshVersion.current
+    setLoadingMore(true)
+    setError(undefined)
+    void api.search({ ...searchInput, offset: result.notes.length }, lifetime.current.signal)
+      .then(next => {
+        if (lifetime.current.signal.aborted || version !== refreshVersion.current) return
+        setResult(current => ({ ...next, notes: [...current.notes, ...next.notes] }))
+      })
+      .catch(failure => {
+        if (!lifetime.current.signal.aborted && version === refreshVersion.current) setError(errorText(failure, t))
+      })
+      .finally(() => {
+        if (!lifetime.current.signal.aborted && version === refreshVersion.current) setLoadingMore(false)
+      })
+  }
+
+  const clearFilters = (): void => {
+    setView('all')
+    setNotebookId('')
+    setTag('')
+    setQuery('')
+    setSettledQuery('')
+  }
+
   const activeNotebook = overview?.notebooks.find(item => item.id === notebookId)
+  const hasFilters = view !== 'all' || notebookId !== '' || tag !== '' || query.trim() !== ''
   const scopeId = notebookId ? `notebook:${notebookId}` : `view:${view}`
   const scopeLabel = activeNotebook?.name ?? (view === 'recent' ? t('recent') : view === 'archived' ? t('archived') : t('allNotes'))
   const scopeItems = useMemo<readonly MenuEntry[]>(() => [
@@ -343,81 +402,103 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
     <main className="dsh-notebook">
       <section ref={listPane} className="dsh-notebook-list-pane" hidden={showingDetail}>
         <header className="dsh-notebook-list-head">
-          <div className="dsh-notebook-scope">
-            <Menu
-              open={scopeMenuOpen}
-              onClose={() => setScopeMenuOpen(false)}
-              items={scopeItems}
-              selectedId={scopeId}
-              onSelect={(id) => {
-                if (id.startsWith('notebook:')) {
-                  setNotebookId(id.slice('notebook:'.length))
-                  setView('all')
-                } else {
-                  setNotebookId('')
-                  setView(id.slice('view:'.length) as View)
-                }
-                setSelected(undefined)
-                setDraft(undefined)
-                setScopeMenuOpen(false)
-              }}
-              portal
-              dense
-              anchor={<Button className="dsh-notebook-scope-select" size="sm" variant="outline"
-                icon={activeNotebook ? <NotebookTabs size={14} /> : view === 'archived' ? <Archive size={14} />
-                  : view === 'recent' ? <Clock3 size={14} /> : <FileText size={14} />}
-                aria-label={t('scope')} aria-haspopup="menu" aria-expanded={scopeMenuOpen}
-                onClick={() => setScopeMenuOpen(open => !open)}>
-                <span className="dsh-notebook-scope-label">{scopeLabel}</span><ChevronDown size={13} />
-              </Button>}
-            />
-            <div className="dsh-notebook-actions">
-              <Button size="sm" variant="ghost" icon={<Plus size={14} />} aria-label={t('newNotebook')}
-                title={t('newNotebook')} onClick={() => setNotebookForm({ name: '' })} />
-              {activeNotebook && <>
+          <div className="dsh-notebook-toolbar">
+            <div className="dsh-notebook-scope">
+              <Menu
+                open={scopeMenuOpen}
+                onClose={() => setScopeMenuOpen(false)}
+                items={scopeItems}
+                selectedId={scopeId}
+                onSelect={(id) => {
+                  if (id.startsWith('notebook:')) {
+                    setNotebookId(id.slice('notebook:'.length))
+                    setView('all')
+                  } else {
+                    setNotebookId('')
+                    setView(id.slice('view:'.length) as View)
+                  }
+                  setSelected(undefined)
+                  setDraft(undefined)
+                  setScopeMenuOpen(false)
+                }}
+                portal
+                dense
+                anchor={<Button className="dsh-notebook-scope-select" size="sm" variant="outline"
+                  icon={activeNotebook ? <NotebookTabs size={14} /> : view === 'archived' ? <Archive size={14} />
+                    : view === 'recent' ? <Clock3 size={14} /> : <FileText size={14} />}
+                  aria-label={t('scope')} aria-haspopup="menu" aria-expanded={scopeMenuOpen}
+                  onClick={() => setScopeMenuOpen(open => !open)}>
+                  <span className="dsh-notebook-scope-label">{scopeLabel}</span><ChevronDown size={13} />
+                </Button>}
+              />
+              {activeNotebook && <div className="dsh-notebook-scope-actions">
                 <Button size="sm" variant="ghost" icon={<Pencil size={13} />} aria-label={t('rename')}
-                  title={t('rename')} onClick={() => setNotebookForm({
-                    id: activeNotebook.id, revision: activeNotebook.revision, name: activeNotebook.name,
-                  })} />
+                  title={t('rename')} onClick={() => {
+                    setError(undefined)
+                    setNotebookForm({ id: activeNotebook.id, revision: activeNotebook.revision, name: activeNotebook.name })
+                  }} />
                 <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} aria-label={t('delete')}
                   title={t('delete')} disabled={activeNotebook.noteCount + activeNotebook.archivedNoteCount > 0}
                   onClick={() => setConfirmation({ kind: 'notebook', id: activeNotebook.id, revision: activeNotebook.revision })} />
-              </>}
+              </div>}
+            </div>
+            <div className="dsh-notebook-toolbar-actions">
+              <Button size="sm" variant="outline" icon={<Plus size={14} />}
+                onClick={() => {
+                  setError(undefined)
+                  setNotebookForm({ name: '' })
+                }}>{t('newNotebook')}</Button>
+              <Button className="dsh-notebook-new-note" size="sm" variant="primary" icon={<Plus size={14} />}
+                onClick={startNewNote}>{t('newNote')}</Button>
             </div>
           </div>
-          <div className="dsh-notebook-search-row">
-            <div className="dsh-notebook-row"><Search size={14} aria-hidden="true" />
-              <Input value={query} onChange={event => setQuery(event.currentTarget.value)}
-                placeholder={t('search')} aria-label={t('search')} />
-            </div>
-            <Button className="dsh-notebook-new-note" size="sm" variant="primary" icon={<Plus size={14} />}
-              onClick={() => {
-                lastListAction.current = 'new'
-                setPreview(false)
-                setDraft(emptyDraft(notebookId || overview?.notebooks[0]?.id))
-              }}>{t('newNote')}</Button>
-          </div>
-          {(overview?.tags.length ?? 0) > 0 && <div className="dsh-notebook-pills">
-            {overview?.tags.map(value => <Pill key={value} active={tag === value}
-              onClick={() => setTag(current => current === value ? '' : value)}><TagIcon size={11} /> {value}</Pill>)}
+          <Input className="dsh-notebook-search" icon={<Search size={16} aria-hidden="true" />}
+            type="search" value={query} onChange={event => setQuery(event.currentTarget.value)}
+            placeholder={t('search')} aria-label={t('search')} />
+          {(overview?.tags.length ?? 0) > 0 && <div className="dsh-notebook-tags">
+            <span className="dsh-notebook-tags-label"><TagIcon size={13} aria-hidden="true" />{t('tags')}</span>
+            {overview?.tags.map(value => <Pill key={value} active={tag === value} aria-pressed={tag === value}
+              onClick={() => setTag(current => current === value ? '' : value)}>{value}</Pill>)}
           </div>}
         </header>
-        {error && <div className="dsh-notebook-error" role="alert">{t('error')}: {error}</div>}
+        {error && !notebookForm && <div className="dsh-notebook-error" role="alert">{t('error')}: {error}</div>}
+        {overview && <div className="dsh-notebook-list-summary">
+          <span role="status">{t('noteCount', { count: result.total })}</span>
+          {hasFilters && result.notes.length > 0 && <Button size="sm" variant="ghost" onClick={clearFilters}>{t('clearFilters')}</Button>}
+        </div>}
         {loading && result.notes.length === 0
           ? <div className="dsh-notebook-empty">{t('loading')}</div>
           : result.notes.length === 0
-            ? <div className="dsh-notebook-empty"><NotebookTabs size={36} /><h3>{query || tag ? t('noMatch') : t('empty')}</h3><p>{t('emptyHint')}</p></div>
-            : <div className="dsh-notebook-list">
-                {result.notes.map(note => <button key={note.id} type="button" className="dsh-notebook-list-item"
-                  data-note-id={note.id} aria-pressed={selected?.id === note.id} onClick={() => selectNote(note.id)}>
-                  <h3>{note.title}</h3>
-                  <p>{note.excerpt}</p>
-                  <span className="dsh-notebook-meta">
-                    <span>{note.notebookName}</span>
-                    <span>{t('revision')} {note.revision}</span>
-                    {note.imageCount > 0 && <span><Image size={11} /> {note.imageCount}</span>}
-                  </span>
-                </button>)}
+            ? <div className="dsh-notebook-empty"><NotebookTabs size={36} />
+                <h3>{settledQuery || tag ? t('noMatch') : t('empty')}</h3>
+                <p>{settledQuery || tag ? t('noMatchHint') : t('emptyHint')}</p>
+                <div className="dsh-notebook-actions">
+                  {!settledQuery && !tag && view !== 'archived' && <Button size="sm" variant="primary" onClick={startNewNote}>{t('newNote')}</Button>}
+                  {hasFilters && <Button size="sm" variant="outline" onClick={clearFilters}>{t('clearFilters')}</Button>}
+                </div>
+              </div>
+            : <div className="dsh-notebook-list" aria-busy={loading || loadingMore}>
+                {result.notes.map(note => {
+                  const excerpt = previewExcerpt(note.excerpt, note.title)
+                  return <button key={note.id} type="button" className="dsh-notebook-list-item"
+                    data-note-id={note.id} aria-pressed={selected?.id === note.id} onClick={() => selectNote(note.id)}>
+                    <span className="dsh-notebook-list-top">
+                      <h3>{note.title}</h3>
+                      <time dateTime={note.updatedAt}>{new Date(note.updatedAt).toLocaleDateString()}</time>
+                    </span>
+                    {excerpt && <p>{excerpt}</p>}
+                    <span className="dsh-notebook-meta">
+                      <span>{note.notebookName}</span>
+                      <span>{t('revision')} {note.revision}</span>
+                      {note.imageCount > 0 && <span><Image size={11} /> {note.imageCount}</span>}
+                    </span>
+                  </button>
+                })}
+                {result.hasMore && <div className="dsh-notebook-list-more">
+                  <Button size="sm" variant="outline" disabled={loadingMore} onClick={loadMore}>
+                    {loadingMore ? t('loadingMore') : t('loadMore')}
+                  </Button>
+                </div>}
               </div>}
       </section>
 
@@ -550,7 +631,7 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
     <Modal open={notebookForm !== undefined} onClose={() => setNotebookForm(undefined)}
       title={notebookForm?.id ? t('rename') : t('newNotebook')} closeLabel={t('close')}
       footer={<><Button variant="ghost" onClick={() => setNotebookForm(undefined)}>{t('cancel')}</Button>
-        <Button variant="primary" onClick={() => void run(async signal => {
+        <Button variant="primary" disabled={loading || !notebookForm?.name.trim()} onClick={() => void run(async signal => {
           if (!notebookForm) return
           if (notebookForm.id) {
             await api.renameNotebook({ id: notebookForm.id, expectedRevision: notebookForm.revision as number, name: notebookForm.name }, signal)
@@ -562,7 +643,12 @@ export function NotebookPanel({ t, api, useTabInfo }: PanelProps) {
         })}>{notebookForm?.id ? t('rename') : t('create')}</Button></>}>
       <div className="dsh-notebook-modal-body"><Input value={notebookForm?.name ?? ''}
         aria-label={t('notebookName')} placeholder={t('notebookName')}
-        onChange={event => setNotebookForm(current => current && ({ ...current, name: event.currentTarget.value }))} /></div>
+        onChange={event => {
+          const name = event.currentTarget.value
+          setNotebookForm(current => current && ({ ...current, name }))
+        }} />
+        {error && <div className="dsh-notebook-error" role="alert">{t('error')}: {error}</div>}
+      </div>
     </Modal>
 
     <Modal open={confirmation !== undefined} onClose={() => setConfirmation(undefined)}

@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NotebookApi } from '../src/client/index.ts'
 import { NotebookPanel } from '../src/client/Panel.tsx'
 import { en } from '../src/client/locales.ts'
-import type { Note, Notebook, NoteRevision } from '../src/types.ts'
+import type { Note, Notebook, NoteRevision, NoteSearchInput } from '../src/types.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ icon, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon?: React.ReactNode }) =>
@@ -20,7 +20,8 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
     onToggle: () => void
     children?: React.ReactNode
   }) => <section><button type="button" onClick={onToggle}>{icon}{title}</button>{open && children}</section>,
-  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
+  Input: ({ icon, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { icon?: React.ReactNode }) =>
+    <span>{icon}<input {...props} /></span>,
   MarkdownText: ({ text }: { text: string }) => <article data-testid="markdown">{text}</article>,
   Menu: ({ open, anchor, items, onSelect }: {
     open: boolean
@@ -117,7 +118,7 @@ function api(initial = note()) {
       activeNotes: current.archivedAt === null ? 1 : 0,
       archivedNotes: current.archivedAt === null ? 0 : 1,
     })),
-    search: vi.fn(async (input: { archived?: boolean }) => ({
+    search: vi.fn(async (input: NoteSearchInput) => ({
       notes: (input.archived === true) === (current.archivedAt !== null) ? [current] : [],
       total: (input.archived === true) === (current.archivedAt !== null) ? 1 : 0,
       hasMore: false,
@@ -193,6 +194,14 @@ afterEach(() => {
 })
 
 describe('NotebookPanel', () => {
+  it('starts a note from the empty state', async () => {
+    const user = userEvent.setup()
+    renderPanel(api(note({ archivedAt: '2026-09-20T02:00:00.000Z' })))
+    const empty = await screen.findByRole('heading', { name: 'No notes yet' })
+    await user.click(within(empty.parentElement as HTMLElement).getByRole('button', { name: 'New note' }))
+    expect(screen.getByRole('heading', { name: 'New note' })).toBeDefined()
+  })
+
   it('replaces the note list while drafting and restores it when returning', async () => {
     const user = userEvent.setup()
     const service = api()
@@ -316,6 +325,66 @@ describe('NotebookPanel', () => {
       notebookId: 'book-1',
       archived: false,
     }), expect.any(AbortSignal)))
+  })
+
+  it('shows a readable excerpt without repeating the Markdown heading', async () => {
+    renderPanel(api(note({ excerpt: '# Launch notes Keep **important** [links](https://example.com) in view.' })))
+    const item = await screen.findByRole('button', { name: /Launch notes/ })
+    expect(within(item).getByText('Keep important links in view.')).toBeDefined()
+    expect(within(item).queryByText(/# Launch notes/)).toBeNull()
+  })
+
+  it('debounces search and offers a way back from empty results', async () => {
+    const user = userEvent.setup()
+    const service = api()
+    const first = note()
+    service.search.mockImplementation(async input => input.query === 'missing'
+      ? { notes: [], total: 0, hasMore: false }
+      : { notes: [first], total: 1, hasMore: false })
+    renderPanel(service)
+    await screen.findByRole('button', { name: /Launch notes/ })
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search notes' }), 'missing')
+    expect(await screen.findByRole('heading', { name: 'No matching notes' })).toBeDefined()
+    expect(service.search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'missing' }), expect.any(AbortSignal))
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect((screen.getByRole('searchbox', { name: 'Search notes' }) as HTMLInputElement).value).toBe('')
+    expect(await screen.findByRole('button', { name: /Launch notes/ })).toBeDefined()
+  })
+
+  it('loads the next page of notes from the list', async () => {
+    const user = userEvent.setup()
+    const service = api()
+    const first = note()
+    const second = note({ id: 'note-2' as Note['id'], title: 'Second note' })
+    service.search.mockImplementation(async input => input.offset === 1
+      ? { notes: [second], total: 2, hasMore: false }
+      : { notes: [first], total: 2, hasMore: true })
+    renderPanel(service)
+    await screen.findByRole('button', { name: /Launch notes/ })
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }))
+    expect(await screen.findByRole('button', { name: /Second note/ })).toBeDefined()
+    expect(service.search).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 1 }), expect.any(AbortSignal))
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+  })
+
+  it('creates a notebook after entering a name in the dialog', async () => {
+    const user = userEvent.setup()
+    const service = api()
+    renderPanel(service)
+    await screen.findByRole('button', { name: /Launch notes/ })
+
+    await user.click(screen.getByRole('button', { name: 'New notebook' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New notebook' })
+    const create = within(dialog).getByRole('button', { name: 'Create' }) as HTMLButtonElement
+    expect(create.disabled).toBe(true)
+    await user.type(within(dialog).getByRole('textbox', { name: 'Notebook name' }), 'Research')
+    expect(create.disabled).toBe(false)
+    await user.click(create)
+
+    await waitFor(() => expect(service.createNotebook).toHaveBeenCalledWith({ name: 'Research' }, expect.any(AbortSignal)))
   })
 
   it('loads history and restores an earlier revision as a new revision', async () => {

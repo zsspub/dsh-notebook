@@ -36,7 +36,11 @@ export declare const en: {
     readonly empty: "No notes yet";
     readonly emptyHint: "Create a note here, or ask the Agent to remember something.";
     readonly noMatch: "No matching notes";
+    readonly noMatchHint: "Try another search or clear the filters.";
+    readonly clearFilters: "Clear filters";
     readonly loading: "Loading notebook…";
+    readonly loadMore: "Load more";
+    readonly loadingMore: "Loading more…";
     readonly saving: "Saving…";
     readonly error: "Operation failed";
     readonly updated: "Updated";
